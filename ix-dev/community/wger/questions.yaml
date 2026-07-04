@@ -138,6 +138,42 @@ questions:
             default: 3000
             min: 1
             required: true
+        - variable: powersync
+          label: PowerSync (Mobile App Sync)
+          description: |
+            PowerSync provides bidirectional offline-capable sync for the wger mobile app.</br>
+            Required by wger 2.6. Requires a one-time setup after first start — see the Notes tab for details.
+          schema:
+            type: dict
+            attrs:
+              - variable: ps_storage_password
+                label: PowerSync Storage Password
+                description: |
+                  Password for the dedicated `powersync_storage` Postgres role used by PowerSync.</br>
+                  After first start, run: `python3 manage.py setup-powersync-storage` in the server container.
+                schema:
+                  type: string
+                  default: ""
+                  required: true
+                  private: true
+              - variable: ps_url_path
+                label: PowerSync URL Path
+                description: |
+                  The URL sub-path at which PowerSync is reachable (e.g. `ps` → `http://your-server/ps/`).</br>
+                  This value is also passed to the wger server as `POWERSYNC_URL_PATH`.
+                schema:
+                  type: string
+                  default: ps
+                  required: true
+              - variable: ps_port
+                label: PowerSync Internal Port
+                description: The internal port the PowerSync service listens on (default 8080).
+                schema:
+                  type: int
+                  default: 8080
+                  min: 1
+                  max: 65535
+                  required: true
         - variable: additional_envs
           label: Additional Environment Variables
           schema:
@@ -260,6 +296,8 @@ questions:
                                         description: nginx
                                       - value: postgres
                                         description: postgres
+                                      - value: powersync
+                                        description: powersync
                                       - value: redis
                                         description: redis
                                 - variable: config
@@ -829,6 +867,8 @@ questions:
                             description: nginx
                           - value: postgres
                             description: postgres
+                          - value: powersync
+                            description: powersync
                           - value: redis
                             description: redis
   - variable: resources
