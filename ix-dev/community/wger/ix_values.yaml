@@ -23,6 +23,9 @@ images:
   postgres_upgrade_image:
     repository: ixsystems/postgres-upgrade
     tag: 1.2.11
+  powersync_image:
+    repository: journeyapps/powersync-service
+    tag: "1.23.2"
 
 consts:
   server_container_name: server
