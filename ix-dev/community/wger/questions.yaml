@@ -305,6 +305,8 @@ questions:
                                         description: redis
                                       - value: powersync
                                         description: powersync
+                                      - value: powersync-init
+                                        description: powersync-init
                                 - variable: config
                                   label: Container Network Configuration
                                   schema:
@@ -965,6 +967,8 @@ questions:
                             description: redis
                           - value: powersync
                             description: powersync
+                          - value: powersync-init
+                            description: powersync-init
   - variable: resources
     label: ""
     group: Resources Configuration
