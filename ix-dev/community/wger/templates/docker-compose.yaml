@@ -133,6 +133,8 @@
 
 {# -- Worker -- #}
 {% do worker.healthcheck.set_custom_test(["CMD", "celery", "-A", "wger", "inspect", "ping"]) %}
+{% do worker.healthcheck.set_timeout(15) %}
+{% do worker.healthcheck.set_start_period(300) %}
 {% do worker.set_command(["/start-worker"]) %}
 {% do worker.depends.add_dependency(values.consts.server_container_name, "service_healthy") %}
 {% do worker.add_storage("/home/wger/media", values.storage.media) %}
