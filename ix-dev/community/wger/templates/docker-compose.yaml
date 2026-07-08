@@ -56,6 +56,8 @@
   {% do powersync.set_user(values.consts.run_as_user, values.consts.run_as_group) %}
   {% do powersync.set_command(["start", "-r", "unified"]) %}
   {% do powersync.healthcheck.set_test("node", {"port": values.consts.powersync_port, "path": "/ready"}) %}
+  {% do powersync.healthcheck.set_start_period(120) %}
+  {% do powersync.healthcheck.set_retries(10) %}
   {% do powersync.depends.add_dependency(values.consts.powersync_init_container_name, "service_completed_successfully") %}
   {% do powersync.depends.add_dependency(values.consts.postgres_container_name, "service_healthy") %}
   {% do powersync.depends.add_dependency(values.consts.server_container_name, "service_healthy") %}
