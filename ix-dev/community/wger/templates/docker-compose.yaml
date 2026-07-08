@@ -42,10 +42,10 @@
 {% if values.wger.powersync_enabled %}
   {# Init container: seeds sync_rules.yaml into the config volume on first start only #}
   {% set ps_init = tpl.add_container(values.consts.powersync_init_container_name, "container_utils_image") %}
+  {% do ps_init.setup_as_helper(disable_network=False) %}
   {% do ps_init.set_user(values.consts.run_as_user, values.consts.run_as_group) %}
   {% do ps_init.add_network(wger_net) %}
   {% do ps_init.add_storage("/config", values.storage.powersync_config) %}
-  {% do ps_init.healthcheck.disable() %}
   {% do ps_init.set_command([
     "sh", "-c",
     "test -f /config/sync_rules.yaml || cat > /config/sync_rules.yaml << 'SYNC_RULES_EOF'\n" ~ sync_rules_yaml() ~ "\nSYNC_RULES_EOF"
