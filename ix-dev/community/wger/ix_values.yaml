@@ -54,25 +54,41 @@ consts:
 
     ## PowerSync (mobile app sync)
 
-    Run the following one-time setup commands after the first start to create
-    the required Postgres role, schema, and replication slot:
+    PowerSync requires a one-time setup before it can start successfully.
+    Until this is done, the `powersync` container will log an authentication
+    error (`password authentication failed for user "powersync_storage"`) and
+    restart — this is expected.
+
+    Shell into the `server` container and run:
 
     ```sh
     python3 manage.py setup-powersync-storage
     ```
 
-    This command is idempotent and safe to re-run if needed.
+    This creates the required Postgres role, schema, and replication slot.
+    It is idempotent and safe to re-run. If you change `powersync_storage_password`,
+    update it in the app settings first and then re-run this command.
 
     ### Customising sync rules
 
     The `sync_rules.yaml` file controls which data is replicated to the mobile app.
-    It is stored in the **PowerSync Sync Rules** storage volume and can be edited freely —
-    the app will never overwrite it.
-    
-    On first start, the `powersync-init` helper seeds a default `sync_rules.yaml` into that volume.
-    To inspect or edit it, open a shell in the `powersync-init` container before it exits, or read it
-    directly from the volume mount:
-    
+    It lives in the **PowerSync Config** storage volume at `sync_rules.yaml` and can
+    be edited freely — the app will never overwrite it once seeded.
+
+    On first start a default `sync_rules.yaml` is written by the `powersync-init`
+    helper. To inspect or edit it, open a shell and read it from the volume mount:
+
     ```sh
-    cat /sync_rules/sync_rules.yaml
+    cat /config/sync_rules.yaml
     ```
+
+    ### Compaction
+
+    PowerSync's replication log grows without bound unless compacted periodically.
+    Run compaction manually with:
+
+    ```sh
+    docker compose run --rm powersync compact
+    ```
+
+    A daily cron or systemd timer is recommended for production deployments.
