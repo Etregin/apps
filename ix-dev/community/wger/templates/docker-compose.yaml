@@ -51,11 +51,12 @@
     "test -f /config/sync_rules.yaml || cat > /config/sync_rules.yaml << 'SYNC_RULES_EOF'\n" ~ sync_rules_yaml() ~ "\nSYNC_RULES_EOF"
   ]) %}
 
-  {# PowerSync service #}
+  {# PowerSync service — healthcheck disabled: requires one-time setup via
+     `python3 manage.py setup-powersync-storage` before it can start cleanly. #}
   {% set powersync = tpl.add_container(values.consts.powersync_container_name, "powersync_image") %}
   {% do powersync.set_user(values.consts.run_as_user, values.consts.run_as_group) %}
   {% do powersync.set_command(["start", "-r", "unified"]) %}
-  {% do powersync.healthcheck.set_test("node", {"port": values.consts.powersync_port, "path": "/ready"}) %}
+  {% do powersync.healthcheck.disable() %}
   {% do powersync.depends.add_dependency(values.consts.powersync_init_container_name, "service_completed_successfully") %}
   {% do powersync.depends.add_dependency(values.consts.postgres_container_name, "service_healthy") %}
   {% do powersync.depends.add_dependency(values.consts.server_container_name, "service_healthy") %}
@@ -66,9 +67,6 @@
   {% do powersync.configs.add("powersync.yaml", powersync_yaml(values, postgres), "/config/powersync.yaml") %}
 
   {% do powersync.environment.add_env("POWERSYNC_CONFIG_PATH", "/config/powersync.yaml") %}
-
-  {# Update nginx to depend on PowerSync #}
-  {% do nginx.depends.add_dependency(values.consts.powersync_container_name, "service_healthy") %}
 {% endif %}
 
 {% set containers = [server, worker, beat] %}
@@ -126,6 +124,16 @@
 {% do server.healthcheck.set_start_period(300) %}
 {% do server.healthcheck.set_retries(10) %}
 {% do server.environment.add_env("WGER_PORT", values.consts.internal_server_port) %}
+{% if values.wger.powersync_enabled %}
+  {# PS_STORAGE_PG_URI is read by setup-powersync-storage to create the role with the correct password #}
+  {% do server.environment.add_env("PS_STORAGE_PG_URI",
+    "postgres://powersync_storage:%s@%s:%s/%s" | format(
+      values.wger.powersync_storage_password,
+      values.consts.postgres_container_name,
+      postgres.get_port(),
+      values.consts.db_name
+    )) %}
+{% endif %}
 {% do server.depends.add_dependency(values.consts.postgres_container_name, "service_healthy") %}
 {% do server.depends.add_dependency(values.consts.redis_container_name, "service_healthy") %}
 {% do server.add_storage("/home/wger/static", values.storage.static) %}
