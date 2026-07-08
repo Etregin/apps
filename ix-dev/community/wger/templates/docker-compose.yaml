@@ -51,12 +51,11 @@
     "test -f /config/sync_rules.yaml || cat > /config/sync_rules.yaml << 'SYNC_RULES_EOF'\n" ~ sync_rules_yaml() ~ "\nSYNC_RULES_EOF"
   ]) %}
 
-  {# PowerSync service — healthcheck disabled: requires one-time setup via
-     `python3 manage.py setup-powersync-storage` before it can start cleanly. #}
+  {# PowerSync service #}
   {% set powersync = tpl.add_container(values.consts.powersync_container_name, "powersync_image") %}
   {% do powersync.set_user(values.consts.run_as_user, values.consts.run_as_group) %}
   {% do powersync.set_command(["start", "-r", "unified"]) %}
-  {% do powersync.healthcheck.disable() %}
+  {% do powersync.healthcheck.set_test("node", {"port": values.consts.powersync_port, "path": "/ready"}) %}
   {% do powersync.depends.add_dependency(values.consts.powersync_init_container_name, "service_completed_successfully") %}
   {% do powersync.depends.add_dependency(values.consts.postgres_container_name, "service_healthy") %}
   {% do powersync.depends.add_dependency(values.consts.server_container_name, "service_healthy") %}
