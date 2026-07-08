@@ -1,4 +1,5 @@
 {% from "macros/nginx.conf" import nginx_config %}
+{% from "macros/powersync.conf" import powersync_yaml, sync_rules_yaml %}
 {% set tpl = ix_lib.base.render.Render(values) %}
 
 {# {% if values.wger.postgres_image_selector == "postgres_17_image" %}
@@ -18,44 +19,6 @@
 {% set perm_container = tpl.deps.perms(values.consts.perms_container_name) %}
 {% set perms_config = {"uid": values.consts.run_as_user, "gid": values.consts.run_as_group, "mode": "check"} %}
 
-{# -- PowerSync (Conditional) -- #}
-{% if values.wger.powersync_enabled %}
-  {% set powersync = tpl.add_container("powersync", "powersync_image") %}
-  {% do powersync.set_user(values.consts.run_as_user, values.consts.run_as_group) %}
-  {% do powersync.depends.add_dependency(values.consts.postgres_container_name, "service_healthy") %}
-  {% do powersync.depends.add_dependency(values.consts.server_container_name, "service_healthy") %}
-  
-  {# PowerSync configuration storage #}
-  {% do powersync.add_storage("/config", values.storage.powersync_config) %}
-  
-  {# Set environment variables for PowerSync #}
-  {% do powersync.environment.add_env("PS_DATABASE_URI", 
-    "postgres://%s:%s@%s:%s/%s" | format(
-      values.consts.db_user,
-      values.wger.db_password,
-      values.consts.postgres_container_name,
-      postgres.get_port(),
-      values.consts.db_name
-    )) %}
-  {% do powersync.environment.add_env("PS_STORAGE_PG_URI", 
-    "postgres://powersync_storage:%s@%s:%s/%s" | format(
-      values.wger.powersync_storage_password,
-      values.consts.postgres_container_name,
-      postgres.get_port(),
-      values.consts.db_name
-    )) %}
-  {% do powersync.environment.add_env("PS_PORT", 8080) %}
-  {% do powersync.environment.add_env("PS_JWKS_URL", "http://%s:%s/api/v2/powersync-keys" | format(
-    values.consts.server_container_name,
-    values.consts.internal_server_port
-  )) %}
-  
-  {% do powersync.add_network(wger_net) %}
-  
-  {# Update nginx to depend on PowerSync #}
-  {% do nginx.depends.add_dependency("powersync", "service_healthy") %}
-{% endif %}
-
 {# -- Postgres -- #}
 {% set pg_config = {
   "user": values.consts.db_user,
@@ -74,6 +37,39 @@
 } %}
 {% set redis = tpl.deps.redis(values.consts.redis_container_name, "redis_image", redis_config, perm_container) %}
 {% do redis.container.add_network(wger_net) %}
+
+{# -- PowerSync (Conditional) -- #}
+{% if values.wger.powersync_enabled %}
+  {# Init container: seeds sync_rules.yaml into the config volume on first start only #}
+  {% set ps_init = tpl.add_container(values.consts.powersync_init_container_name, "container_utils_image") %}
+  {% do ps_init.set_user(values.consts.run_as_user, values.consts.run_as_group) %}
+  {% do ps_init.add_network(wger_net) %}
+  {% do ps_init.add_storage("/config", values.storage.powersync_config) %}
+  {% do ps_init.healthcheck.disable() %}
+  {% do ps_init.set_command([
+    "sh", "-c",
+    "test -f /config/sync_rules.yaml || cat > /config/sync_rules.yaml << 'SYNC_RULES_EOF'\n" ~ sync_rules_yaml() ~ "\nSYNC_RULES_EOF"
+  ]) %}
+
+  {# PowerSync service #}
+  {% set powersync = tpl.add_container(values.consts.powersync_container_name, "powersync_image") %}
+  {% do powersync.set_user(values.consts.run_as_user, values.consts.run_as_group) %}
+  {% do powersync.set_command(["start", "-r", "unified"]) %}
+  {% do powersync.healthcheck.set_test("curl", {"port": values.consts.powersync_port, "path": "/ready"}) %}
+  {% do powersync.depends.add_dependency(values.consts.powersync_init_container_name, "service_completed_successfully") %}
+  {% do powersync.depends.add_dependency(values.consts.postgres_container_name, "service_healthy") %}
+  {% do powersync.depends.add_dependency(values.consts.server_container_name, "service_healthy") %}
+  {% do powersync.add_network(wger_net) %}
+
+  {# Mount the shared config volume — powersync.yaml injected via configs, sync_rules.yaml seeded by init #}
+  {% do powersync.add_storage("/config", values.storage.powersync_config) %}
+  {% do powersync.configs.add("powersync.yaml", powersync_yaml(values, postgres), "/config/powersync.yaml") %}
+
+  {% do powersync.environment.add_env("POWERSYNC_CONFIG_PATH", "/config/powersync.yaml") %}
+
+  {# Update nginx to depend on PowerSync #}
+  {% do nginx.depends.add_dependency(values.consts.powersync_container_name, "service_healthy") %}
+{% endif %}
 
 {% set containers = [server, worker, beat] %}
 {% for c in containers + [nginx] %}
@@ -148,6 +144,9 @@
 {% do perm_container.add_or_skip_action("static", values.storage.static, perms_config) %}
 {% do perm_container.add_or_skip_action("media", values.storage.media, perms_config) %}
 {% do perm_container.add_or_skip_action("beat", values.storage.beat, perms_config) %}
+{% if values.wger.powersync_enabled %}
+  {% do perm_container.add_or_skip_action("powersync_config", values.storage.powersync_config, perms_config) %}
+{% endif %}
 {% for store in values.storage.additional_storage %}
   {% do perm_container.add_or_skip_action(store.mount_path, store, perms_config) %}
 {% endfor %}
@@ -159,15 +158,15 @@
     {% do c.depends.add_dependency(values.consts.perms_container_name, "service_completed_successfully") %}
   {% endfor %}
 
+  {% if values.wger.powersync_enabled %}
+    {% do ps_init.depends.add_dependency(values.consts.perms_container_name, "service_completed_successfully") %}
+  {% endif %}
+
   {% do postgres.add_dependency(values.consts.perms_container_name, "service_completed_successfully") %}
   {% do redis.container.depends.add_dependency(values.consts.perms_container_name, "service_completed_successfully") %}
 {% endif %}
 
 {% do tpl.portals.add(values.network.web_port) %}
 {% do tpl.notes.set_body(values.consts.notes_body) %}
-
-{% if values.wger.powersync_enabled %}
-  {% do perm_container.add_or_skip_action("powersync_config", values.storage.powersync_config, perms_config) %}
-{% endif %}
 
 {{ tpl.render() | tojson }}
