@@ -141,6 +141,8 @@
 
 {# -- Beat -- #}
 {% do beat.healthcheck.set_custom_test(["CMD", "celery", "-A", "wger", "inspect", "ping"]) %}
+{% do beat.healthcheck.set_timeout(15) %}
+{% do beat.healthcheck.set_start_period(60) %}
 {% do beat.set_command(["/start-beat"]) %}
 {% do beat.depends.add_dependency(values.consts.worker_container_name, "service_healthy") %}
 {% do beat.add_storage("/home/wger/beat", values.storage.beat) %}
